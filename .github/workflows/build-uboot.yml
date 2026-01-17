@@ -1,0 +1,84 @@
+name: Build Original U-Boot
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          gcc-aarch64-linux-gnu \
+          gcc-arm-none-eabi \
+          bison \
+          flex \
+          python3 \
+          device-tree-compiler \
+          bc \
+          libssl-dev \
+          make \
+          git
+
+    - name: Clone ARM Trusted Firmware
+      run: |
+        git clone --depth 1 --branch v2.8 https://github.com/ARM-software/arm-trusted-firmware.git
+
+    - name: Build ATF
+      run: |
+        cd arm-trusted-firmware
+        unset BL31
+        make CROSS_COMPILE=aarch64-linux-gnu- PLAT=rk3399 ENABLE_STACK_PROTECTOR=0
+        
+    - name: Clone U-Boot
+      run: |
+        git clone --depth 1 https://github.com/u-boot/u-boot.git
+
+    - name: Configure and Build U-Boot
+      run: |
+        export BL31=${{ github.workspace }}/arm-trusted-firmware/build/rk3399/release/bl31/bl31.elf
+        export CROSS_COMPILE=aarch64-linux-gnu-
+        
+        cd u-boot
+        
+        # Copy device tree
+        cat ${{ github.workspace }}/config/tn3399-linux.dts > ./arch/arm/dts/rk3399-rock960.dts
+        
+        # Clean and configure
+        make distclean
+        make rock960-rk3399_defconfig
+        
+        # Build
+        make -j$(nproc)
+
+    - name: Clone rkbin for loader generation
+      run: |
+        git clone --depth 1 https://github.com/rockchip-linux/rkbin.git
+
+    - name: Generate loader
+      run: |
+        cd rkbin
+        ./tools/boot_merger ./RKBOOT/RK3399MINIALL.ini .
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: uboot-images
+        path: |
+          u-boot/idbloader.img
+          u-boot/u-boot.itb
+          rkbin/rk3399_loader_*.bin
+        retention-days: 30
