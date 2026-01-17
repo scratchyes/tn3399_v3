@@ -22,10 +22,10 @@ jobs:
 
     - name: Free disk space
       run: |
-        sudo rm -rf /usr/share/dotnet
-        sudo rm -rf /opt/ghc
-        sudo rm -rf /usr/local/share/boost
-        sudo rm -rf /opt/hostedtoolcache
+        sudo rm -rf /usr/share/dotnet || true
+        sudo rm -rf /opt/ghc || true
+        sudo rm -rf /usr/local/share/boost || true
+        sudo rm -rf /opt/hostedtoolcache || true
         df -h
       
     - name: Install dependencies
@@ -211,9 +211,27 @@ jobs:
     - name: Get kernel version
       id: kernel_version
       run: |
-        VERSION=$(cat linux/include/config/kernel.release 2>/dev/null || echo "unknown")
+        # Try to get version from kernel.release file, fallback to Makefile parsing
+        if [ -f "linux/include/config/kernel.release" ]; then
+          VERSION=$(cat linux/include/config/kernel.release)
+        else
+          # Extract version from kernel Makefile
+          VERSION=$(make -s -C linux kernelversion 2>/dev/null || echo "")
+        fi
+        
+        # Validate version is not empty
+        if [ -z "$VERSION" ]; then
+          echo "Error: Could not determine kernel version"
+          exit 1
+        fi
+        
+        # Get build date
+        BUILD_DATE=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
+        
         echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+        echo "build_date=${BUILD_DATE}" >> "$GITHUB_OUTPUT"
         echo "Kernel version: ${VERSION}"
+        echo "Build date: ${BUILD_DATE}"
 
     - name: Create Release
       uses: softprops/action-gh-release@v1
@@ -225,7 +243,7 @@ jobs:
           
           - **Kernel Version**: ${{ steps.kernel_version.outputs.version }}
           - **Branch**: ${{ inputs.kernel_version }}
-          - **Build Date**: ${{ github.event.repository.updated_at }}
+          - **Build Date**: ${{ steps.kernel_version.outputs.build_date }}
           - **Commit**: ${{ github.sha }}
           
           ### Files
