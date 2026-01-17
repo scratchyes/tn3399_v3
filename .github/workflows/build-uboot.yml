@@ -35,13 +35,13 @@ jobs:
 
     - name: Clone ARM Trusted Firmware
       run: |
-        git clone --depth 1 https://github.com/ARM-software/arm-trusted-firmware.git
+        git clone --depth 1 --branch lts-v2.10 https://github.com/ARM-software/arm-trusted-firmware.git
 
     - name: Build ATF
       run: |
         cd arm-trusted-firmware
         unset BL31
-        make CROSS_COMPILE=aarch64-linux-gnu- PLAT=rk3399
+        make CROSS_COMPILE=aarch64-linux-gnu- PLAT=rk3399 ENABLE_STACK_PROTECTOR=0
         
     - name: Clone U-Boot
       run: |
