@@ -41,7 +41,9 @@ jobs:
           bc \
           device-tree-compiler \
           make \
-          git
+          git \
+          mtools \
+          dosfstools
 
     - name: Clone Linux kernel
       run: |
@@ -208,6 +210,45 @@ jobs:
         echo "Artifact sizes:"
         ls -lh output/
 
+    - name: Build boot.img
+      run: |
+        set -e
+        cd output
+        
+        # Create extlinux.conf for boot configuration
+        # Note: PARTUUID matches the rootfs partition UUID used by build_image.sh
+        mkdir -p extlinux_tmp
+        cat > extlinux_tmp/extlinux.conf << 'EOF'
+        label kernel-${{ inputs.kernel_version }}
+            kernel /Image
+            fdt /tn3399-linux.dtb
+            append earlycon=uart8250,mmio32,0xff1a0000 swiotlb=1 coherent_pool=1m earlyprintk console=ttyS2,1500000n8 rw root=PARTUUID=b921b045-1d rootfstype=ext4 init=/sbin/init rootwait
+        EOF
+        # Remove leading spaces from heredoc content
+        sed -i 's/^        //' extlinux_tmp/extlinux.conf
+        
+        # Create FAT boot image (100MB, matching build_image.sh)
+        # -n: volume label
+        # -S: logical sector size
+        # -C: create file with given size in KB
+        mkfs.vfat -n "boot" -S 512 -C boot.img $((100 * 1024))
+        
+        # Create extlinux directory in boot image
+        mmd -i boot.img ::/extlinux
+        
+        # Copy extlinux.conf to boot image
+        mcopy -i boot.img -s extlinux_tmp/extlinux.conf ::/extlinux/extlinux.conf
+        
+        # Copy kernel Image and DTB to boot image
+        mcopy -i boot.img -s tn3399-linux.dtb ::tn3399-linux.dtb
+        mcopy -i boot.img -s Image ::Image
+        
+        # Cleanup temp directory
+        rm -rf extlinux_tmp
+        
+        echo "boot.img created successfully:"
+        ls -lh boot.img
+
     - name: Get kernel version
       id: kernel_version
       run: |
@@ -247,9 +288,11 @@ jobs:
           - **Commit**: ${{ github.sha }}
           
           ### Files
+          - `boot.img`: Bootable FAT image containing kernel and device tree (ready to flash)
           - `Image`: Uncompressed kernel image
           - `tn3399-linux.dtb`: Device tree blob for TN3399 V3
         files: |
+          output/boot.img
           output/Image
           output/tn3399-linux.dtb
         draft: false
