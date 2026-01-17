@@ -1,0 +1,100 @@
+name: Build Original Kernel
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Free disk space
+      run: |
+        sudo rm -rf /usr/share/dotnet
+        sudo rm -rf /opt/ghc
+        sudo rm -rf /usr/local/share/boost
+        df -h
+      
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          gcc-aarch64-linux-gnu \
+          libssl-dev \
+          lzop \
+          kmod \
+          flex \
+          bison \
+          bc \
+          device-tree-compiler \
+          make \
+          git
+
+    - name: Clone Linux kernel
+      run: |
+        git clone --depth 1 --branch linux-5.8.y https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git
+
+    - name: Prepare kernel source
+      run: |
+        cd linux
+        
+        # Prevent -dirty suffix in version
+        touch .scmversion
+        
+        # Verify source device tree exists
+        if [ ! -f "${{ github.workspace }}/config/tn3399-linux.dts" ]; then
+          echo "Error: config/tn3399-linux.dts not found"
+          exit 1
+        fi
+        
+        # Copy device tree
+        cat ${{ github.workspace }}/config/tn3399-linux.dts > ./arch/arm64/boot/dts/rockchip/rk3399-rock960.dts
+        
+        # Modify WiFi driver compatibility (if the file exists)
+        if [ -f "./arch/arm64/boot/dts/rockchip/rk3399-rock960.dtsi" ]; then
+          sed -i 's/bcm4329-fmac/bcm43455-fmac/g' ./arch/arm64/boot/dts/rockchip/rk3399-rock960.dtsi
+        fi
+
+    - name: Configure kernel
+      run: |
+        cd linux
+        export ARCH=arm64
+        export CROSS_COMPILE=aarch64-linux-gnu-
+        
+        # Clean and generate default config
+        make distclean
+        make defconfig
+
+    - name: Build kernel
+      run: |
+        cd linux
+        export ARCH=arm64
+        export CROSS_COMPILE=aarch64-linux-gnu-
+        
+        # Build kernel
+        make -j$(nproc)
+
+    - name: Prepare artifacts
+      run: |
+        mkdir -p output
+        cp linux/arch/arm64/boot/Image output/
+        cp linux/arch/arm64/boot/dts/rockchip/rk3399-rock960.dtb output/tn3399-linux.dtb
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: kernel-images
+        path: |
+          output/Image
+          output/tn3399-linux.dtb
+        retention-days: 30
