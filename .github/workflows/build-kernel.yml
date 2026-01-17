@@ -1,14 +1,16 @@
 name: Build Original Kernel
 
 on:
-  push:
-    branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
   workflow_dispatch:
+    inputs:
+      kernel_version:
+        description: 'Kernel version branch (e.g., linux-5.8.y, linux-6.1.y)'
+        required: false
+        default: 'linux-5.8.y'
+        type: string
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -20,9 +22,10 @@ jobs:
 
     - name: Free disk space
       run: |
-        sudo rm -rf /usr/share/dotnet
-        sudo rm -rf /opt/ghc
-        sudo rm -rf /usr/local/share/boost
+        sudo rm -rf /usr/share/dotnet || true
+        sudo rm -rf /opt/ghc || true
+        sudo rm -rf /usr/local/share/boost || true
+        sudo rm -rf /opt/hostedtoolcache || true
         df -h
       
     - name: Install dependencies
@@ -42,7 +45,7 @@ jobs:
 
     - name: Clone Linux kernel
       run: |
-        git clone --depth 1 --branch linux-5.8.y https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git
+        git clone --depth 1 --branch ${{ inputs.kernel_version }} https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git
 
     - name: Prepare kernel source
       run: |
@@ -71,9 +74,116 @@ jobs:
         export ARCH=arm64
         export CROSS_COMPILE=aarch64-linux-gnu-
         
-        # Clean and generate default config
+        # Clean the source tree
         make distclean
+        
+        # Use full defconfig for ARM64 with additional options enabled
         make defconfig
+        
+        # Enable additional kernel features for a complete kernel
+        ./scripts/config --enable CONFIG_MODULES
+        ./scripts/config --enable CONFIG_BLK_DEV_INITRD
+        ./scripts/config --enable CONFIG_IKCONFIG
+        ./scripts/config --enable CONFIG_IKCONFIG_PROC
+        ./scripts/config --enable CONFIG_KALLSYMS
+        ./scripts/config --enable CONFIG_KALLSYMS_ALL
+        ./scripts/config --enable CONFIG_DEBUG_INFO
+        ./scripts/config --enable CONFIG_DEBUG_INFO_DWARF4
+        ./scripts/config --enable CONFIG_DEBUG_FS
+        ./scripts/config --enable CONFIG_MAGIC_SYSRQ
+        
+        # Enable filesystem support
+        ./scripts/config --enable CONFIG_EXT4_FS
+        ./scripts/config --enable CONFIG_BTRFS_FS
+        ./scripts/config --enable CONFIG_XFS_FS
+        ./scripts/config --enable CONFIG_VFAT_FS
+        ./scripts/config --enable CONFIG_NTFS_FS
+        ./scripts/config --enable CONFIG_FUSE_FS
+        ./scripts/config --enable CONFIG_OVERLAY_FS
+        
+        # Enable networking
+        ./scripts/config --enable CONFIG_NETFILTER
+        ./scripts/config --enable CONFIG_IP_NF_IPTABLES
+        ./scripts/config --enable CONFIG_IP6_NF_IPTABLES
+        ./scripts/config --enable CONFIG_BRIDGE
+        ./scripts/config --enable CONFIG_VLAN_8021Q
+        ./scripts/config --enable CONFIG_TUN
+        ./scripts/config --enable CONFIG_MACVLAN
+        ./scripts/config --enable CONFIG_VXLAN
+        
+        # Enable USB support
+        ./scripts/config --enable CONFIG_USB
+        ./scripts/config --enable CONFIG_USB_STORAGE
+        ./scripts/config --enable CONFIG_USB_SERIAL
+        ./scripts/config --enable CONFIG_USB_GADGET
+        
+        # Enable device mapper for LVM/encryption
+        ./scripts/config --enable CONFIG_BLK_DEV_DM
+        ./scripts/config --enable CONFIG_DM_CRYPT
+        ./scripts/config --enable CONFIG_DM_MIRROR
+        ./scripts/config --enable CONFIG_DM_SNAPSHOT
+        
+        # Enable cgroups for containers
+        ./scripts/config --enable CONFIG_CGROUPS
+        ./scripts/config --enable CONFIG_CGROUP_SCHED
+        ./scripts/config --enable CONFIG_CGROUP_PIDS
+        ./scripts/config --enable CONFIG_CGROUP_FREEZER
+        ./scripts/config --enable CONFIG_CGROUP_DEVICE
+        ./scripts/config --enable CONFIG_CGROUP_CPUACCT
+        ./scripts/config --enable CONFIG_CGROUP_BPF
+        ./scripts/config --enable CONFIG_MEMCG
+        ./scripts/config --enable CONFIG_BLK_CGROUP
+        
+        # Enable security features
+        ./scripts/config --enable CONFIG_SECCOMP
+        ./scripts/config --enable CONFIG_SECURITY
+        ./scripts/config --enable CONFIG_SECURITY_SELINUX
+        ./scripts/config --enable CONFIG_SECURITY_APPARMOR
+        
+        # Enable RK3399 specific drivers
+        ./scripts/config --enable CONFIG_ARCH_ROCKCHIP
+        ./scripts/config --enable CONFIG_ROCKCHIP_IOMMU
+        ./scripts/config --enable CONFIG_ROCKCHIP_PM_DOMAINS
+        ./scripts/config --enable CONFIG_ROCKCHIP_THERMAL
+        ./scripts/config --enable CONFIG_PHY_ROCKCHIP_EMMC
+        ./scripts/config --enable CONFIG_PHY_ROCKCHIP_INNO_USB2
+        ./scripts/config --enable CONFIG_PHY_ROCKCHIP_TYPEC
+        ./scripts/config --enable CONFIG_ROCKCHIP_SARADC
+        ./scripts/config --enable CONFIG_COMMON_CLK_ROCKCHIP
+        ./scripts/config --enable CONFIG_PWM_ROCKCHIP
+        ./scripts/config --enable CONFIG_MMC_DW_ROCKCHIP
+        ./scripts/config --enable CONFIG_SPI_ROCKCHIP
+        ./scripts/config --enable CONFIG_I2C_RK3X
+        ./scripts/config --enable CONFIG_GPIO_ROCKCHIP
+        ./scripts/config --enable CONFIG_PINCTRL_ROCKCHIP
+        
+        # Enable GPU support
+        ./scripts/config --enable CONFIG_DRM
+        ./scripts/config --enable CONFIG_DRM_ROCKCHIP
+        ./scripts/config --enable CONFIG_DRM_PANFROST
+        
+        # Enable sound support
+        ./scripts/config --enable CONFIG_SOUND
+        ./scripts/config --enable CONFIG_SND
+        ./scripts/config --enable CONFIG_SND_SOC
+        ./scripts/config --enable CONFIG_SND_SOC_ROCKCHIP
+        
+        # Enable WiFi/Bluetooth
+        ./scripts/config --enable CONFIG_WIRELESS
+        ./scripts/config --enable CONFIG_CFG80211
+        ./scripts/config --enable CONFIG_MAC80211
+        ./scripts/config --enable CONFIG_BRCMFMAC
+        ./scripts/config --enable CONFIG_BT
+        ./scripts/config --enable CONFIG_BT_HCIUART
+        ./scripts/config --enable CONFIG_BT_HCIUART_BCM
+        
+        # Enable video support
+        ./scripts/config --enable CONFIG_MEDIA_SUPPORT
+        ./scripts/config --enable CONFIG_VIDEO_V4L2
+        ./scripts/config --enable CONFIG_VIDEO_ROCKCHIP_RGA
+        
+        # Regenerate config to resolve dependencies
+        make olddefconfig
 
     - name: Build kernel
       run: |
@@ -81,20 +191,68 @@ jobs:
         export ARCH=arm64
         export CROSS_COMPILE=aarch64-linux-gnu-
         
-        # Build kernel
-        make -j$(nproc)
+        # Build kernel with all CPUs
+        make -j"$(nproc)"
+        
+        # Show kernel image size
+        echo "Kernel Image size:"
+        ls -lh arch/arm64/boot/Image
 
     - name: Prepare artifacts
       run: |
         mkdir -p output
         cp linux/arch/arm64/boot/Image output/
         cp linux/arch/arm64/boot/dts/rockchip/rk3399-rock960.dtb output/tn3399-linux.dtb
+        
+        # Show artifact sizes
+        echo "Artifact sizes:"
+        ls -lh output/
 
-    - name: Upload artifacts
-      uses: actions/upload-artifact@v4
+    - name: Get kernel version
+      id: kernel_version
+      run: |
+        # Try to get version from kernel.release file, fallback to Makefile parsing
+        if [ -f "linux/include/config/kernel.release" ]; then
+          VERSION=$(cat linux/include/config/kernel.release)
+        else
+          # Extract version from kernel Makefile
+          VERSION=$(make -s -C linux kernelversion 2>/dev/null || echo "")
+        fi
+        
+        # Validate version is not empty
+        if [ -z "$VERSION" ]; then
+          echo "Error: Could not determine kernel version"
+          exit 1
+        fi
+        
+        # Get build date
+        BUILD_DATE=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
+        
+        echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+        echo "build_date=${BUILD_DATE}" >> "$GITHUB_OUTPUT"
+        echo "Kernel version: ${VERSION}"
+        echo "Build date: ${BUILD_DATE}"
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
       with:
-        name: kernel-images
-        path: |
+        tag_name: kernel-${{ steps.kernel_version.outputs.version }}-${{ github.run_number }}
+        name: Kernel ${{ steps.kernel_version.outputs.version }}
+        body: |
+          ## Kernel Build
+          
+          - **Kernel Version**: ${{ steps.kernel_version.outputs.version }}
+          - **Branch**: ${{ inputs.kernel_version }}
+          - **Build Date**: ${{ steps.kernel_version.outputs.build_date }}
+          - **Commit**: ${{ github.sha }}
+          
+          ### Files
+          - `Image`: Uncompressed kernel image
+          - `tn3399-linux.dtb`: Device tree blob for TN3399 V3
+        files: |
           output/Image
           output/tn3399-linux.dtb
-        retention-days: 30
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
