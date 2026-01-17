@@ -73,6 +73,16 @@ jobs:
         DDR_BIN=$(ls -1 ../rkbin/bin/rk33/rk3399_ddr_800MHz_v*.bin 2>/dev/null | sort -V | tail -1)
         MINILOADER_BIN=$(ls -1 ../rkbin/bin/rk33/rk3399_miniloader_v*.bin 2>/dev/null | sort -V | tail -1)
         
+        # Validate binaries exist
+        if [ -z "$DDR_BIN" ] || [ ! -f "$DDR_BIN" ]; then
+          echo "Error: DDR binary not found in rkbin repository"
+          exit 1
+        fi
+        if [ -z "$MINILOADER_BIN" ] || [ ! -f "$MINILOADER_BIN" ]; then
+          echo "Error: Miniloader binary not found in rkbin repository"
+          exit 1
+        fi
+        
         echo "Using DDR binary: $DDR_BIN"
         echo "Using miniloader binary: $MINILOADER_BIN"
         
@@ -87,14 +97,25 @@ jobs:
       run: |
         mkdir -p output
         
+        # Validate required files exist
+        for file in idbloader.img uboot.img trust.img; do
+          if [ ! -f "u-boot/$file" ]; then
+            echo "Error: Required file u-boot/$file not found"
+            exit 1
+          fi
+        done
+        
         # Copy the required files
         cp u-boot/idbloader.img output/
         cp u-boot/uboot.img output/
         cp u-boot/trust.img output/
         
-        # Also copy the loader if generated
-        if ls u-boot/rk3399_loader_*.bin 1> /dev/null 2>&1; then
-          cp u-boot/rk3399_loader_*.bin output/
+        # Also copy the loader if generated (using shopt for safe globbing)
+        shopt -s nullglob
+        loader_files=(u-boot/rk3399_loader_*.bin)
+        shopt -u nullglob
+        if [ ${#loader_files[@]} -gt 0 ]; then
+          cp "${loader_files[@]}" output/
         fi
         
         # Show artifact sizes
@@ -104,11 +125,23 @@ jobs:
     - name: Get build info
       id: build_info
       run: |
+        # Validate Makefile exists
+        if [ ! -f "u-boot/Makefile" ]; then
+          echo "Error: u-boot/Makefile not found"
+          exit 1
+        fi
+        
         # Get u-boot version from Makefile
         VERSION=$(grep -E '^VERSION\s*=' u-boot/Makefile | head -1 | cut -d= -f2 | tr -d ' ')
         PATCHLEVEL=$(grep -E '^PATCHLEVEL\s*=' u-boot/Makefile | head -1 | cut -d= -f2 | tr -d ' ')
         SUBLEVEL=$(grep -E '^SUBLEVEL\s*=' u-boot/Makefile | head -1 | cut -d= -f2 | tr -d ' ')
         EXTRAVERSION=$(grep -E '^EXTRAVERSION\s*=' u-boot/Makefile | head -1 | cut -d= -f2 | tr -d ' ')
+        
+        # Validate VERSION and PATCHLEVEL are set
+        if [ -z "$VERSION" ] || [ -z "$PATCHLEVEL" ]; then
+          echo "Error: Could not extract version from Makefile"
+          exit 1
+        fi
         
         FULL_VERSION="${VERSION}.${PATCHLEVEL}"
         if [ -n "$SUBLEVEL" ] && [ "$SUBLEVEL" != "0" ]; then
