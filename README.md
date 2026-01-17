@@ -172,7 +172,7 @@ apt install -y libssl-dev lzop kmod flex bison
 git clone https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git
 
 # 或从镜像快速克隆
-git clone https://mirrors.tuna.tsinghua.edu.cn/git/linux.git
+#git clone https://mirrors.tuna.tsinghua.edu.cn/git/linux.git
 cd linux
 git remote add upstream https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git
 git fetch upstream
